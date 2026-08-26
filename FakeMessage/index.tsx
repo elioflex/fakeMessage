@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { ChatBarButton } from "@api/ChatButtons";
+import { addChatBarButton, ChatBarButton, removeChatBarButton } from "@api/ChatButtons";
 import { ApplicationCommandInputType, ApplicationCommandOptionType, findOption, sendBotMessage } from "@api/Commands";
 import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { IconComponent, OptionType } from "@utils/types";
 import { Message, RenderModalProps, User } from "@vencord/discord-types";
-import { Button, Menu, MessageStore, Modal, openModal, React, SelectedChannelStore, showToast, TextArea, TextInput, UserStore, UserUtils } from "@webpack/common";
+import { Button, Menu, MessageStore, Modal, moment, openModal, React, SelectedChannelStore, showToast, Switch, TextArea, TextInput, UserStore, UserUtils } from "@webpack/common";
 
 /**
  * A fake message is just like a real Discord message, except:
@@ -28,6 +28,8 @@ interface StoredFakeMessage {
     author?: Record<string, any>;
     content: string;
     timestamp: number;
+    /** When present, this fake renders as a call log entry (system message) instead of a text message */
+    call?: { durationSeconds: number; missed?: boolean };
 }
 
 const ID_PREFIX = "fakemessage-";
@@ -47,6 +49,12 @@ const settings = definePluginSettings({
     showChatButton: {
         type: OptionType.BOOLEAN,
         description: "Show the 👻 ghost button in the chat bar",
+        restartNeeded: false,
+        default: true
+    },
+    showCallButton: {
+        type: OptionType.BOOLEAN,
+        description: "Show the 📞 call button in the chat bar",
         restartNeeded: false,
         default: true
     },
@@ -325,6 +333,35 @@ function buildMessage(fake: StoredFakeMessage, base: Message | null): Message | 
         customRenderedContent: null
     };
 
+    // Call log entries are system messages (type 3): no text content, and a
+    // `call` record describing the duration + who was on the call. Discord's
+    // renderer turns that into the phone-icon row ("11PM called · 5 minutes")
+    // or, when the current user was NOT among the participants, a red missed
+    // call. Two details matter for it to render without crashing:
+    //  - `duration` must be a moment-duration object — Discord calls
+    //    `duration.humanize()` on it to format the length.
+    //  - a missed call is detected by the current user's absence from
+    //    `participants`, not by the duration.
+    const isCall = fake.call !== undefined;
+    if (isCall) {
+        const seconds = fake.call!.durationSeconds;
+        const currentUserId = UserStore.getCurrentUser()?.id;
+        const missed = fake.call!.missed === true;
+        Object.assign(overrides, {
+            type: 3, // CALL
+            content: "",
+            call: {
+                duration: missed ? null : (moment ? moment.duration(seconds, "seconds") : seconds),
+                endedTimestamp: new Date(fake.timestamp),
+                participants: missed
+                    ? [fake.authorId]
+                    : [fake.authorId, currentUserId].filter(Boolean)
+            }
+        });
+    } else {
+        clean.call = null;
+    }
+
     if (base) {
         const msg: any = Object.create(Object.getPrototypeOf(base));
         Object.assign(msg, base, overrides, clean);
@@ -443,6 +480,48 @@ function injectFakeMessage(channelId: string, author: User, content: string, min
     showToast(`Fake message sent as ${author.username}`);
 }
 
+/** Parse "mm:ss" (or plain minutes) into seconds. Used for call durations. */
+function parseDuration(input: string): number {
+    const t = (input || "").trim() || "0";
+    if (t.includes(":")) {
+        const [m, s] = t.split(":").map(n => parseInt(n, 10) || 0);
+        return Math.min(Math.max(m, 0) * 60 + Math.max(s, 0), 60 * 60); // cap at 1 hour
+    }
+    const n = parseInt(t, 10) || 0;
+    return Math.min(Math.max(n, 0) * 60, 60 * 60); // plain number = minutes
+}
+
+/** Add a fake call log entry to a DM: a phone-icon system message, e.g. "11PM called · 5 minutes". */
+function injectFakeCall(channelId: string, author: User, durationSeconds: number, minutesAgo = 0, missed = false) {
+    if (!author) {
+        showToast("Could not find that user");
+        return;
+    }
+
+    const channelFakes = getFakesForChannel(channelId);
+    if (channelFakes.length >= MAX_FAKES_PER_CHANNEL) {
+        showToast(`Too many fake messages in this channel (max ${MAX_FAKES_PER_CHANNEL}). Clear some first.`);
+        return;
+    }
+
+    const id = `${ID_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    fakes.push({
+        id,
+        channelId,
+        authorId: author.id,
+        author: snapshotUser(author),
+        content: "",
+        timestamp: Date.now() - Math.max(0, minutesAgo) * 60_000,
+        call: { durationSeconds, missed }
+    });
+
+    saveFakes();
+    refresh();
+    showToast(missed
+        ? `Fake missed call from ${author.username} added`
+        : `Fake call from ${author.username} added`);
+}
+
 function removeFake(messageId: string) {
     const before = fakes.length;
     fakes = fakes.filter(f => f.id !== messageId);
@@ -480,17 +559,42 @@ const FakeMessageIcon: IconComponent = ({ height = 22, width = 22, className }) 
     </svg>
 );
 
-function openFakeMessageModal(user?: User, channelId?: string) {
+/** Phone handset — the "fake call" chat bar button. */
+const CallIcon: IconComponent = ({ height = 22, width = 22, className }) => (
+    <svg
+        width={width}
+        height={height}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        aria-hidden="true"
+    >
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+);
+
+// `Switch` from @webpack/common is a deprecated export typed as `never`; it's
+// the FormSwitchCompat component at runtime, which takes `note` + children.
+const FormSwitch = Switch as any;
+
+function openFakeMessageModal(user?: User, channelId?: string, mode: "message" | "call" = "message") {
     const targetChannel = channelId ?? SelectedChannelStore.getChannelId();
     openModal(modalProps => (
-        <FakeMessageModal initialUser={user} channelId={targetChannel} modalProps={modalProps} />
+        <FakeMessageModal initialUser={user} channelId={targetChannel} modalProps={modalProps} initialMode={mode} />
     ));
 }
 
-function FakeMessageModal({ initialUser, channelId, modalProps }: { initialUser?: User; channelId: string; modalProps: RenderModalProps; }) {
+function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "message" }: { initialUser?: User; channelId: string; modalProps: RenderModalProps; initialMode?: "message" | "call"; }) {
+    const [mode, setMode] = React.useState<"message" | "call">(initialMode);
     const [user, setUser] = React.useState<User | null>(initialUser ?? null);
     const [query, setQuery] = React.useState("");
     const [content, setContent] = React.useState("");
+    const [duration, setDuration] = React.useState("5:00");
+    const [missed, setMissed] = React.useState(false);
     const [minutesAgo, setMinutesAgo] = React.useState("0");
     const [fetching, setFetching] = React.useState(false);
     const [fetchError, setFetchError] = React.useState<string | null>(null);
@@ -524,8 +628,13 @@ function FakeMessageModal({ initialUser, channelId, modalProps }: { initialUser?
     };
 
     const insert = () => {
-        if (!user || !content.trim()) return;
-        injectFakeMessage(channelId, user, content, Number(minutesAgo) || 0);
+        if (!user) return;
+        if (mode === "call") {
+            injectFakeCall(channelId, user, missed ? 0 : parseDuration(duration), Number(minutesAgo) || 0, missed);
+        } else {
+            if (!content.trim()) return;
+            injectFakeMessage(channelId, user, content, Number(minutesAgo) || 0);
+        }
         modalProps.onClose();
     };
 
@@ -535,12 +644,28 @@ function FakeMessageModal({ initialUser, channelId, modalProps }: { initialUser?
         <Modal
             {...modalProps}
             size="medium"
-            title="Fake Message"
+            title={mode === "call" ? "Fake Call" : "Fake Message"}
             actions={[
                 { text: "Cancel", variant: "secondary", onClick: modalProps.onClose },
-                { text: "Insert", variant: "primary", onClick: insert, disabled: !user || !content.trim() }
+                { text: "Insert", variant: "primary", onClick: insert, disabled: !user || (mode === "message" && !content.trim()) }
             ]}
         >
+            <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                <Button
+                    size={Button.Sizes.SMALL}
+                    color={mode === "message" ? Button.Colors.BRAND : Button.Colors.PRIMARY}
+                    onClick={() => setMode("message")}
+                >
+                    💬 Message
+                </Button>
+                <Button
+                    size={Button.Sizes.SMALL}
+                    color={mode === "call" ? Button.Colors.BRAND : Button.Colors.PRIMARY}
+                    onClick={() => setMode("call")}
+                >
+                    📞 Call
+                </Button>
+            </div>
             {user ? (
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
                     <img
@@ -609,16 +734,38 @@ function FakeMessageModal({ initialUser, channelId, modalProps }: { initialUser?
                     )}
                 </div>
             )}
-            <TextArea
-                value={content}
-                onChange={setContent}
-                placeholder="Message content… (markdown, mentions and emoji all work)"
-                rows={3}
-                maxLength={2000}
-            />
+            {mode === "call" ? (
+                <div>
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "6px" }}>
+                        Call duration (mm:ss) — <strong>0:00</strong> = missed call
+                    </div>
+                    <TextInput
+                        value={duration}
+                        onChange={v => setDuration(v.replace(/[^\d:]/g, "").slice(0, 8))}
+                        placeholder="5:00"
+                    />
+                    <div style={{ marginTop: "12px" }}>
+                        <FormSwitch
+                            value={missed}
+                            onChange={setMissed}
+                            note="The call was never answered — renders as a red missed-call entry"
+                        >
+                            Missed call
+                        </FormSwitch>
+                    </div>
+                </div>
+            ) : (
+                <TextArea
+                    value={content}
+                    onChange={setContent}
+                    placeholder="Message content… (markdown, mentions and emoji all work)"
+                    rows={3}
+                    maxLength={2000}
+                />
+            )}
             <div style={{ marginTop: "12px" }}>
                 <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "6px" }}>
-                    Sent <strong>{minutesAgo || "0"}</strong> minute{Number(minutesAgo) === 1 ? "" : "s"} ago (0 = right now)
+                    {mode === "call" ? "Call" : "Sent"} <strong>{minutesAgo || "0"}</strong> minute{Number(minutesAgo) === 1 ? "" : "s"} ago (0 = right now)
                 </div>
                 <TextInput
                     value={minutesAgo}
@@ -646,7 +793,7 @@ const MessageContextMenu: NavContextMenuPatchCallback = (children, { message }: 
     children.push(
         <Menu.MenuItem
             id="vc-fakemessage-remove"
-            label="Remove Fake Message"
+            label={(message as any).call ? "Remove Fake Call" : "Remove Fake Message"}
             action={() => removeFake(message.id)}
         />
     );
@@ -716,6 +863,52 @@ export default definePlugin({
                     sendBotMessage(ctx.channel.id, { content: `Failed to create fake message: ${String(e)}` });
                 }
             }
+        },
+        {
+            inputType: ApplicationCommandInputType.BUILT_IN,
+            name: "fakecall",
+            description: "Add a fake call log entry in this DM — as if you and another user just talked on the phone (client-side only)",
+            options: [
+                {
+                    name: "user",
+                    description: "The other person in the call",
+                    type: ApplicationCommandOptionType.USER,
+                    required: true
+                },
+                {
+                    name: "duration",
+                    description: "Call duration as mm:ss or minutes (default 5:00). 0 or 'missed' = missed call",
+                    type: ApplicationCommandOptionType.STRING
+                },
+                {
+                    name: "missed",
+                    description: "Mark as a missed call (never answered)",
+                    type: ApplicationCommandOptionType.BOOLEAN
+                },
+                {
+                    name: "minutes-ago",
+                    description: "How many minutes ago the call happened (defaults to 0 = right now)",
+                    type: ApplicationCommandOptionType.INTEGER
+                }
+            ],
+            execute: async (opts, ctx) => {
+                try {
+                    const userId = findOption(opts, "user", "");
+                    if (!userId) return sendBotMessage(ctx.channel.id, { content: "Pick a user." });
+
+                    const user = UserStore.getUser(userId) ?? await UserUtils.getUser(userId);
+                    if (!user) return sendBotMessage(ctx.channel.id, { content: "Could not find that user." });
+
+                    const missed = Boolean(findOption(opts, "missed", false));
+                    const durationRaw = String(findOption(opts, "duration", "5:00") ?? "5:00");
+                    const duration = missed ? 0 : parseDuration(durationRaw);
+                    const minutesAgo = Math.max(0, Number(findOption(opts, "minutes-ago", 0)) || 0);
+
+                    injectFakeCall(ctx.channel.id, user, duration, minutesAgo, missed);
+                } catch (e) {
+                    sendBotMessage(ctx.channel.id, { content: `Failed to create fake call: ${String(e)}` });
+                }
+            }
         }
     ],
 
@@ -728,10 +921,22 @@ export default definePlugin({
     start() {
         loadFakes();
         patchStore();
+        // Second chat-bar button (the plugin's own `chatBarButton` is the ghost
+        // message button; this one adds the 📞 phone button for fake calls).
+        addChatBarButton("FakeMessageCall", ({ channel }) => {
+            const { showCallButton } = settings.use(["showCallButton"]);
+            if (!showCallButton) return null;
+            return (
+                <ChatBarButton tooltip="Fake Call" onClick={() => openFakeMessageModal(void 0, channel.id, "call")}>
+                    <CallIcon />
+                </ChatBarButton>
+            );
+        }, CallIcon);
         console.log("[FakeMessage] Plugin started with", fakes.length, "stored fake message(s)");
     },
 
     stop() {
+        removeChatBarButton("FakeMessageCall");
         unpatchStore();
         refresh();
         console.log("[FakeMessage] Plugin stopped");
@@ -739,6 +944,7 @@ export default definePlugin({
 
     // Exposed for programmatic use / testing
     injectFakeMessage,
+    injectFakeCall,
     removeFake,
     removeFakesForChannel
 });

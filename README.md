@@ -15,8 +15,9 @@ Watch the whole flow: click the 👻 button, search for who should have sent it,
 ## Features
 
 - **👻 Chat bar button** — a ghost button at the left of the message input. Click it, search for the person who should appear to have sent the message, type, and hit **Insert**. Shown by default; hide it anytime via **Show chat bar button** in plugin settings.
-- **🎯 `fakemessage` command** — `/fakemessage user: @bob content: hey check this out` drops the fake in the current channel. `minutes-ago` backdates it into history.
-- **🖱 Context menus** — right-click any user → **Fake Message** (pre-selected for you); right-click a fake message → **Remove Fake Message**.
+- **📞 Fake calls** — a phone button next to the ghost button drops realistic **call log entries** in DMs: "11PM called · 5m 12s", or a red missed call. Pick the person, set the duration, hit **Insert**.
+- **🎯 Slash commands** — `/fakemessage user: @bob content: hey check this out` drops a fake message; `/fakecall user: @bob duration: 5:12 missed: true minutes-ago: 30` drops a fake call entry.
+- **🖱 Context menus** — right-click any user → **Fake Message** (pre-selected for you); right-click a fake message → **Remove Fake Message** / **Remove Fake Call**.
 - **⏱ Backdating** — the fake slots into history at the right position with the matching timestamp.
 - **💾 Persistence** — fakes survive restarts and channel switches (stored in plugin settings, toggleable).
 - **🔒 Client-side only** — nothing is uploaded, synced, or sent. Nobody else sees your fakes.
@@ -37,11 +38,12 @@ Real avatar, real username, real role color, real timestamp, markdown, `<@mentio
 
 | Way | How |
 | --- | --- |
-| Ghost button | Click the 👻 button in the chat input bar → search a user (or paste a user ID) → type → **Insert**. Hidden/restored via **Show chat bar button** in plugin settings |
-| Command | `/fakemessage user: <user> content: <text> [minutes-ago: <n>]` |
+| Ghost button | Click the 👻 button in the chat input bar → search a user (or paste a user ID) → type → **Insert** |
+| Call button | Click the 📞 button → pick the other person → set duration (mm:ss) or toggle **Missed call** → **Insert** |
+| Command | `/fakemessage user: <user> content: <text> [minutes-ago: <n>]` or `/fakecall user: <user> [duration: mm:ss] [missed: true] [minutes-ago: <n>]` |
 | User context menu | Right-click any user → **Fake Message** |
-| Clean up | Right-click a fake message → **Remove Fake Message**, or Settings → **Clear all fake messages** |
-| Hide the button | Turn **Show chat bar button** off in plugin settings — `/fakemessage` and the context menus still work |
+| Clean up | Right-click a fake message → **Remove Fake Message** / **Remove Fake Call**, or Settings → **Clear all fake messages** |
+| Hide the buttons | Turn **Show 👻 chat bar button** / **Show 📞 call button** off in plugin settings — commands and context menus still work |
 
 ## How it works
 
@@ -58,6 +60,7 @@ Real avatar, real username, real role color, real timestamp, markdown, `<@mentio
 - Links in fakes don't auto-fetch embeds (Discord only embeds messages it received from the server).
 - No attachments / reactions / stickers — text, markdown, and mentions only.
 - Fakes don't move the unread divider or notify anyone (they're client-side).
+- Fake calls appear in the chat log only — no ringing, no incoming-call screen (that would actually contact the other side).
 
 ## License
 
