@@ -21,6 +21,7 @@ Because the fakes are merged at render time (never written into Discord's underl
 ### 1. Chat bar buttons
 - A 👻 ghost button appears at the left of the message input in every channel. Click it, search for the person who should appear to have sent the message (or paste their user ID), type the message, and hit **Insert**.
 - A 📞 phone button sits right next to it for **fake calls**: pick the person you "talked" to, set a duration (`mm:ss`, or `0:00` for a missed call), and hit **Insert**. A call log entry appears in the DM — phone icon, "11PM called", duration — rendered by Discord itself.
+- A 📲 incoming button (ringing phone) shows a **full-screen incoming-call screen**: the caller's avatar with a pulsing ring, their name, and green accept / red decline buttons. Accepting starts a live fake call timer until you hang up. Purely visual — no real call is dialed.
 
 ### 2. Slash commands
 Type in any channel:
@@ -39,7 +40,7 @@ Type in any channel:
 
 ### 4. Settings
 - **Persist fake messages** — keep fakes across restarts (on by default).
-- **Show 👻 chat bar button / Show 📞 call button** — toggle either chat-bar button on/off.
+- **Show 👻 chat bar button / Show 📞 call button / Show 📲 incoming button** — toggle each chat-bar button on/off.
 - **Clear all fake messages** — removes every fake everywhere.
 
 ## Privacy / safety

@@ -10,7 +10,7 @@ import { NavContextMenuPatchCallback } from "@api/ContextMenu";
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { IconComponent, OptionType } from "@utils/types";
 import { Message, RenderModalProps, User } from "@vencord/discord-types";
-import { Button, Menu, MessageStore, Modal, moment, openModal, React, SelectedChannelStore, showToast, Switch, TextArea, TextInput, UserStore, UserUtils } from "@webpack/common";
+import { Button, createRoot, Menu, MessageStore, Modal, moment, openModal, React, SelectedChannelStore, showToast, Switch, TextArea, TextInput, UserStore, UserUtils } from "@webpack/common";
 
 /**
  * A fake message is just like a real Discord message, except:
@@ -55,6 +55,12 @@ const settings = definePluginSettings({
     showCallButton: {
         type: OptionType.BOOLEAN,
         description: "Show the 📞 call button in the chat bar",
+        restartNeeded: false,
+        default: true
+    },
+    showIncomingButton: {
+        type: OptionType.BOOLEAN,
+        description: "Show the 📲 incoming-call button in the chat bar",
         restartNeeded: false,
         default: true
     },
@@ -577,19 +583,40 @@ const CallIcon: IconComponent = ({ height = 22, width = 22, className }) => (
     </svg>
 );
 
+/** Ringing phone with an incoming arrow — the "fake incoming call" chat bar button. */
+const IncomingCallIcon: IconComponent = ({ height = 22, width = 22, className }) => (
+    <svg
+        width={width}
+        height={height}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        aria-hidden="true"
+    >
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+        <path d="M12 2v8m0 0 3-3m-3 3L9 7" />
+    </svg>
+);
+
 // `Switch` from @webpack/common is a deprecated export typed as `never`; it's
 // the FormSwitchCompat component at runtime, which takes `note` + children.
 const FormSwitch = Switch as any;
 
-function openFakeMessageModal(user?: User, channelId?: string, mode: "message" | "call" = "message") {
+type ModalMode = "message" | "call" | "incoming";
+
+function openFakeMessageModal(user?: User, channelId?: string, mode: ModalMode = "message") {
     const targetChannel = channelId ?? SelectedChannelStore.getChannelId();
     openModal(modalProps => (
         <FakeMessageModal initialUser={user} channelId={targetChannel} modalProps={modalProps} initialMode={mode} />
     ));
 }
 
-function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "message" }: { initialUser?: User; channelId: string; modalProps: RenderModalProps; initialMode?: "message" | "call"; }) {
-    const [mode, setMode] = React.useState<"message" | "call">(initialMode);
+function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "message" }: { initialUser?: User; channelId: string; modalProps: RenderModalProps; initialMode?: ModalMode; }) {
+    const [mode, setMode] = React.useState<ModalMode>(initialMode);
     const [user, setUser] = React.useState<User | null>(initialUser ?? null);
     const [query, setQuery] = React.useState("");
     const [content, setContent] = React.useState("");
@@ -631,6 +658,10 @@ function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "m
         if (!user) return;
         if (mode === "call") {
             injectFakeCall(channelId, user, missed ? 0 : parseDuration(duration), Number(minutesAgo) || 0, missed);
+        } else if (mode === "incoming") {
+            modalProps.onClose();
+            showIncomingCall(user);
+            return;
         } else {
             if (!content.trim()) return;
             injectFakeMessage(channelId, user, content, Number(minutesAgo) || 0);
@@ -644,10 +675,15 @@ function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "m
         <Modal
             {...modalProps}
             size="medium"
-            title={mode === "call" ? "Fake Call" : "Fake Message"}
+            title={mode === "call" ? "Fake Call" : mode === "incoming" ? "Incoming Call" : "Fake Message"}
             actions={[
                 { text: "Cancel", variant: "secondary", onClick: modalProps.onClose },
-                { text: "Insert", variant: "primary", onClick: insert, disabled: !user || (mode === "message" && !content.trim()) }
+                {
+                    text: mode === "incoming" ? "Call" : "Insert",
+                    variant: "primary",
+                    onClick: insert,
+                    disabled: !user || (mode === "message" && !content.trim())
+                }
             ]}
         >
             <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
@@ -664,6 +700,13 @@ function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "m
                     onClick={() => setMode("call")}
                 >
                     📞 Call
+                </Button>
+                <Button
+                    size={Button.Sizes.SMALL}
+                    color={mode === "incoming" ? Button.Colors.BRAND : Button.Colors.PRIMARY}
+                    onClick={() => setMode("incoming")}
+                >
+                    📲 Incoming
                 </Button>
             </div>
             {user ? (
@@ -734,7 +777,13 @@ function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "m
                     )}
                 </div>
             )}
-            {mode === "call" ? (
+            {mode === "incoming" ? (
+                <div style={{ fontSize: "13px", color: "var(--text-muted)", lineHeight: 1.5, padding: "8px 0" }}>
+                    Shows a full-screen incoming-call screen with <strong>{name ?? "this user"}</strong>'s avatar,
+                    a pulsing ring, and accept / decline buttons. Accepting starts a fake call timer.
+                    Purely visual — nothing is actually dialed.
+                </div>
+            ) : mode === "call" ? (
                 <div>
                     <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "6px" }}>
                         Call duration (mm:ss) — <strong>0:00</strong> = missed call
@@ -763,16 +812,18 @@ function FakeMessageModal({ initialUser, channelId, modalProps, initialMode = "m
                     maxLength={2000}
                 />
             )}
-            <div style={{ marginTop: "12px" }}>
-                <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "6px" }}>
-                    {mode === "call" ? "Call" : "Sent"} <strong>{minutesAgo || "0"}</strong> minute{Number(minutesAgo) === 1 ? "" : "s"} ago (0 = right now)
+            {mode !== "incoming" && (
+                <div style={{ marginTop: "12px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "6px" }}>
+                        {mode === "call" ? "Call" : "Sent"} <strong>{minutesAgo || "0"}</strong> minute{Number(minutesAgo) === 1 ? "" : "s"} ago (0 = right now)
+                    </div>
+                    <TextInput
+                        value={minutesAgo}
+                        onChange={v => setMinutesAgo(v.replace(/\D/g, "").slice(0, 4))}
+                        placeholder="Minutes ago"
+                    />
                 </div>
-                <TextInput
-                    value={minutesAgo}
-                    onChange={v => setMinutesAgo(v.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="Minutes ago"
-                />
-            </div>
+            )}
         </Modal>
     );
 }
@@ -799,6 +850,174 @@ const MessageContextMenu: NavContextMenuPatchCallback = (children, { message }: 
     );
 };
 
+// --- incoming call overlay ---------------------------------------------------
+// A full-screen, purely visual incoming-call screen: the caller's avatar with
+// an animated pulsing ring, their name, and accept / decline buttons. Accepting
+// shows a live fake call timer until you hang up. Nothing is actually dialed.
+
+const INCOMING_CALL_KEYFRAMES = `
+    @keyframes vc-fakemessage-ring {
+        0% { transform: scale(1); opacity: .65; }
+        100% { transform: scale(1.9); opacity: 0; }
+    }
+    @keyframes vc-fakemessage-ring2 {
+        0% { transform: scale(1); opacity: 0; }
+        30% { transform: scale(1); opacity: .6; }
+        100% { transform: scale(1.9); opacity: 0; }
+    }
+`;
+
+function IncomingCallOverlay({ user, onClose }: { user: User; onClose: () => void }) {
+    const [phase, setPhase] = React.useState<"ringing" | "connected">("ringing");
+    const [seconds, setSeconds] = React.useState(0);
+
+    React.useEffect(() => {
+        if (phase !== "connected") return;
+        const t = setInterval(() => setSeconds(s => s + 1), 1000);
+        return () => clearInterval(t);
+    }, [phase]);
+
+    React.useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
+
+    const name = user.globalName ?? user.username;
+    const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const ss = String(seconds % 60).padStart(2, "0");
+
+    return (
+        <div style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            gap: "20px",
+            background: "radial-gradient(circle at 50% 30%, rgba(0,0,0,.72), rgba(0,0,0,.92))",
+            backdropFilter: "blur(14px)",
+            fontFamily: "var(--font-primary)"
+        }}>
+            <style>{INCOMING_CALL_KEYFRAMES}</style>
+
+            {/* Pulsing ring around the avatar while ringing */}
+            <div style={{ position: "relative", width: "180px", height: "180px" }}>
+                {phase === "ringing" && (
+                    <>
+                        <div style={{
+                            position: "absolute", inset: 0, borderRadius: "50%",
+                            border: "4px solid var(--green-360)",
+                            animation: "vc-fakemessage-ring 1.6s ease-out infinite"
+                        }} />
+                        <div style={{
+                            position: "absolute", inset: 0, borderRadius: "50%",
+                            border: "4px solid var(--green-360)",
+                            animation: "vc-fakemessage-ring2 1.6s ease-out infinite",
+                            animationDelay: ".5s"
+                        }} />
+                    </>
+                )}
+                <img
+                    src={user.getAvatarURL(void 0, 256, true)}
+                    alt=""
+                    style={{
+                        width: "150px", height: "150px", borderRadius: "50%",
+                        display: "block", margin: "15px auto",
+                        boxShadow: "0 8px 40px rgba(0,0,0,.6), 0 0 0 5px var(--background-tertiary)"
+                    }}
+                />
+            </div>
+
+            <div style={{ fontSize: "24px", fontWeight: "700", color: "var(--header-primary)", maxWidth: "80%", textAlign: "center" }}>
+                {name}
+            </div>
+            <div style={{ fontSize: "16px", color: "var(--text-muted)", marginTop: "-10px" }}>
+                {phase === "ringing" ? "Incoming call…" : `${mm}:${ss}`}
+            </div>
+
+            {phase === "ringing" ? (
+                <div style={{ display: "flex", gap: "40px", marginTop: "16px" }}>
+                    <button
+                        aria-label="Accept call"
+                        title="Accept"
+                        onClick={() => setPhase("connected")}
+                        style={{
+                            width: "76px", height: "76px", borderRadius: "50%", cursor: "pointer",
+                            background: "var(--green-360)", color: "#fff", border: "none",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            boxShadow: "0 6px 20px rgba(59,165,92,.45)",
+                            transition: "transform .12s ease, filter .12s ease"
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+                    >
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.36 11.36 0 0 0 .57 3.57 1 1 0 0 1-.25 1.02z" />
+                        </svg>
+                    </button>
+                    <button
+                        aria-label="Decline call"
+                        title="Decline"
+                        onClick={onClose}
+                        style={{
+                            width: "76px", height: "76px", borderRadius: "50%", cursor: "pointer",
+                            background: "var(--red-400)", color: "#fff", border: "none",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            boxShadow: "0 6px 20px rgba(237,66,69,.45)",
+                            transition: "transform .12s ease, filter .12s ease"
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+                    >
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style={{ transform: "rotate(135deg)" }}>
+                            <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.36 11.36 0 0 0 .57 3.57 1 1 0 0 1-.25 1.02z" />
+                        </svg>
+                    </button>
+                </div>
+            ) : (
+                <button
+                    aria-label="End call"
+                    title="Hang up"
+                    onClick={onClose}
+                    style={{
+                        width: "76px", height: "76px", borderRadius: "50%", cursor: "pointer",
+                        background: "var(--red-400)", color: "#fff", border: "none",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: "0 6px 20px rgba(237,66,69,.45)", marginTop: "16px",
+                        transition: "transform .12s ease"
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+                >
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style={{ transform: "rotate(135deg)" }}>
+                        <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.36 11.36 0 0 0 .57 3.57 1 1 0 0 1-.25 1.02z" />
+                    </svg>
+                </button>
+            )}
+
+            <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px" }}>
+                Purely visual — no real call is being made
+            </div>
+        </div>
+    );
+}
+
+/** Show the full-screen incoming-call overlay for a given caller. Purely visual. */
+function showIncomingCall(user: User) {
+    if (!user) {
+        showToast("Could not find that user");
+        return;
+    }
+    const mount = document.createElement("div");
+    document.body.appendChild(mount);
+    const root = createRoot(mount);
+    const close = () => {
+        root.unmount();
+        mount.remove();
+    };
+    root.render(<IncomingCallOverlay user={user} onClose={close} />);
+}
+
 // --- plugin ------------------------------------------------------------------
 
 export default definePlugin({
@@ -821,6 +1040,10 @@ export default definePlugin({
             );
         }
     },
+
+    // The plugin's own chatBarButton slot is taken by the ghost; the 📞 and 📲
+    // buttons are registered at runtime in start().
+
 
     commands: [
         {
@@ -921,8 +1144,8 @@ export default definePlugin({
     start() {
         loadFakes();
         patchStore();
-        // Second chat-bar button (the plugin's own `chatBarButton` is the ghost
-        // message button; this one adds the 📞 phone button for fake calls).
+        // The plugin's own `chatBarButton` slot is the ghost message button;
+        // the 📞 and 📲 buttons are added at runtime.
         addChatBarButton("FakeMessageCall", ({ channel }) => {
             const { showCallButton } = settings.use(["showCallButton"]);
             if (!showCallButton) return null;
@@ -932,11 +1155,21 @@ export default definePlugin({
                 </ChatBarButton>
             );
         }, CallIcon);
+        addChatBarButton("FakeMessageIncoming", ({ channel }) => {
+            const { showIncomingButton } = settings.use(["showIncomingButton"]);
+            if (!showIncomingButton) return null;
+            return (
+                <ChatBarButton tooltip="Fake Incoming Call" onClick={() => openFakeMessageModal(void 0, channel.id, "incoming")}>
+                    <IncomingCallIcon />
+                </ChatBarButton>
+            );
+        }, IncomingCallIcon);
         console.log("[FakeMessage] Plugin started with", fakes.length, "stored fake message(s)");
     },
 
     stop() {
         removeChatBarButton("FakeMessageCall");
+        removeChatBarButton("FakeMessageIncoming");
         unpatchStore();
         refresh();
         console.log("[FakeMessage] Plugin stopped");
@@ -945,6 +1178,7 @@ export default definePlugin({
     // Exposed for programmatic use / testing
     injectFakeMessage,
     injectFakeCall,
+    showIncomingCall,
     removeFake,
     removeFakesForChannel
 });
