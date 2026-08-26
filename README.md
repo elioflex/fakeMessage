@@ -6,6 +6,12 @@ FakeMessage is a [Vencord](https://github.com/Vendicated/Vencord) plugin that dr
 
 ![Fake message in a DM as the 11PM bot](screenshots/dm-fake-message.png)
 
+## Demo
+
+Watch the whole flow: click the 👻 button, search for who should have sent it, type, and hit **Insert** — the fake lands in the chat, and right-clicking it offers **Remove Fake Message**.
+
+![Demo — Fake Message in action](screenshots/fake-message-demo.gif)
+
 ## Features
 
 - **👻 Chat bar button** — a ghost button at the left of the message input. Click it, search for the person who should appear to have sent the message, type, and hit **Insert**. Shown by default; hide it anytime via **Show chat bar button** in plugin settings.

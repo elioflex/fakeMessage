@@ -35,6 +35,7 @@ const MAX_FAKES_PER_CHANNEL = 50;
 
 let fakes: StoredFakeMessage[] = [];
 let originalGetMessages: ((channelId?: string) => any) | null = null;
+let originalGetMessage: ((channelId: string, messageId: string) => any) | null = null;
 
 const settings = definePluginSettings({
     persist: {
@@ -182,12 +183,26 @@ function patchStore() {
     (MessageStore as any).getMessages = function (this: any, channelId?: string) {
         return wrapMessages(originalGetMessages!(channelId), channelId);
     };
+    // Discord's context-menu / message lookups use getMessage(channelId, id),
+    // which would miss fakes and silently open no menu on right-click. Route it
+    // through the proxied collection so fakes resolve there too.
+    originalGetMessage = (MessageStore as any).getMessage.bind(MessageStore);
+    (MessageStore as any).getMessage = function (this: any, channelId: string, messageId: string) {
+        const coll = (MessageStore as any).getMessages(channelId);
+        const found = coll && typeof coll.get === "function" ? coll.get(messageId) : undefined;
+        if (found) return found;
+        return originalGetMessage!(channelId, messageId);
+    };
 }
 
 function unpatchStore() {
     if (originalGetMessages) {
         (MessageStore as any).getMessages = originalGetMessages;
         originalGetMessages = null;
+    }
+    if (originalGetMessage) {
+        (MessageStore as any).getMessage = originalGetMessage;
+        originalGetMessage = null;
     }
 }
 
