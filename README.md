@@ -8,7 +8,7 @@ FakeMessage is a [Vencord](https://github.com/Vendicated/Vencord) plugin that dr
 
 ## Features
 
-- **👻 Chat bar button** — a ghost button at the left of the message input. Click it, search for the person who should appear to have sent the message, type, and hit **Insert**.
+- **👻 Chat bar button** — a ghost button at the left of the message input. Click it, search for the person who should appear to have sent the message, type, and hit **Insert**. Shown by default; hide it anytime via **Show chat bar button** in plugin settings.
 - **🎯 `fakemessage` command** — `/fakemessage user: @bob content: hey check this out` drops the fake in the current channel. `minutes-ago` backdates it into history.
 - **🖱 Context menus** — right-click any user → **Fake Message** (pre-selected for you); right-click a fake message → **Remove Fake Message**.
 - **⏱ Backdating** — the fake slots into history at the right position with the matching timestamp.
@@ -31,10 +31,11 @@ Real avatar, real username, real role color, real timestamp, markdown, `<@mentio
 
 | Way | How |
 | --- | --- |
-| Ghost button | Click the 👻 button in the chat input bar → search a user (or paste a user ID) → type → **Insert** |
+| Ghost button | Click the 👻 button in the chat input bar → search a user (or paste a user ID) → type → **Insert**. Hidden/restored via **Show chat bar button** in plugin settings |
 | Command | `/fakemessage user: <user> content: <text> [minutes-ago: <n>]` |
 | User context menu | Right-click any user → **Fake Message** |
 | Clean up | Right-click a fake message → **Remove Fake Message**, or Settings → **Clear all fake messages** |
+| Hide the button | Turn **Show chat bar button** off in plugin settings — `/fakemessage` and the context menus still work |
 
 ## How it works
 

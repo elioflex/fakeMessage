@@ -43,6 +43,12 @@ const settings = definePluginSettings({
         restartNeeded: false,
         default: true
     },
+    showChatButton: {
+        type: OptionType.BOOLEAN,
+        description: "Show the 👻 ghost button in the chat bar",
+        restartNeeded: false,
+        default: true
+    },
     clearAll: {
         type: OptionType.COMPONENT,
         component: () => (
@@ -643,11 +649,15 @@ export default definePlugin({
 
     chatBarButton: {
         icon: FakeMessageIcon,
-        render: ({ channel }) => (
-            <ChatBarButton tooltip="Fake Message" onClick={() => openFakeMessageModal(void 0, channel.id)}>
-                <FakeMessageIcon />
-            </ChatBarButton>
-        )
+        render: ({ channel }) => {
+            const { showChatButton } = settings.use(["showChatButton"]);
+            if (!showChatButton) return null;
+            return (
+                <ChatBarButton tooltip="Fake Message" onClick={() => openFakeMessageModal(void 0, channel.id)}>
+                    <FakeMessageIcon />
+                </ChatBarButton>
+            );
+        }
     },
 
     commands: [
