@@ -1,10 +1,30 @@
-# 👻 FakeMessage
+# 👻 FakeMessage — Fake Discord Messages & Calls (Vencord / Equicord Plugin)
 
-> Fake messages that look **100% real** — rendered by Discord itself.
+**Create pixel-perfect fake Discord messages, call logs and incoming-call screens, all rendered by Discord itself. Use it for pranks, mockups, tutorials and screenshots. It runs only on your client, and nobody else sees it.**
 
-FakeMessage is a [Vencord](https://github.com/Vendicated/Vencord) plugin that drops messages into any channel **as if another user had sent them** — with their real avatar, username, role color, and timestamp. The message never leaves your client, but it is rendered by Discord's own message component, so it is visually and interactively indistinguishable from a genuine message.
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![Vencord userplugin](https://img.shields.io/badge/Vencord-userplugin-5865F2.svg)](https://docs.vencord.dev/installing/custom-plugins/)
+[![Equicord compatible](https://img.shields.io/badge/Equicord-compatible-a6d189.svg)](https://github.com/Equicord/Equicord)
+[![GitHub stars](https://img.shields.io/github/stars/elioflex/fakeMessage?style=flat)](https://github.com/elioflex/fakeMessage/stargazers)
+
+FakeMessage is a [Vencord](https://github.com/Vendicated/Vencord) / [Equicord](https://github.com/Equicord/Equicord) plugin that puts a message into any channel **as if another user had sent it**, with their real avatar, username, role color and timestamp. The message never leaves your client. Discord's own message component renders it, so it looks and behaves exactly like a real one.
 
 ![Fake message in a DM as the 11PM bot](screenshots/dm-fake-message.png)
+
+**Quick install** (needs a Vencord or Equicord source build):
+
+```bash
+git clone https://github.com/elioflex/fakeMessage && cp -R fakeMessage/FakeMessage Vencord/src/userplugins/
+```
+
+Then run `pnpm build`, restart Discord, and enable **FakeMessage**. Full steps are under [Install](#install).
+
+### What people use it for
+
+- 😂 **Pranks** on your own screen with friends in the room
+- 🎨 **Mockups** of bot replies, server welcome messages or UI ideas, without needing a test server
+- 🎥 **Tutorials and videos** showing a conversation without real DMs
+- 🧪 **Testing** how themes and CSS snippets render messages
 
 ## Demo
 
@@ -31,9 +51,11 @@ Real avatar, real username, real role color, real timestamp, markdown, `<@mentio
 
 ## Install
 
-1. Copy the `FakeMessage` folder into `Vencord/src/userplugins/`.
-2. Rebuild Vencord (`pnpm build` or your dev watcher).
-3. Restart Discord, then enable **FakeMessage** under **Settings → Vencord → Plugins**.
+You need a source build of [Vencord](https://docs.vencord.dev/installing/) or [Equicord](https://github.com/Equicord/Equicord), plus git, Node.js and pnpm.
+
+1. Copy the `FakeMessage` folder into `Vencord/src/userplugins/` (or `Equicord/src/userplugins/`; create the folder if it doesn't exist).
+2. Rebuild with `pnpm build` (or your dev watcher). If this is a fresh setup, also run `pnpm inject` with Discord closed.
+3. Restart Discord, then enable **FakeMessage** under **Settings → Vencord** (or **Equicord**) **→ Plugins**.
 
 ## Usage
 
@@ -63,6 +85,14 @@ Real avatar, real username, real role color, real timestamp, markdown, `<@mentio
 - No attachments / reactions / stickers — text, markdown, and mentions only.
 - Fakes don't move the unread divider or notify anyone (they're client-side).
 - Fake calls appear in the chat log only; the incoming-call screen is a purely visual overlay (no audio, nothing contacts the other side).
+
+## Responsible use
+
+FakeMessage is for fun and for building things. **Don't use it to fake evidence, impersonate someone to scam or harass them, or pass fake screenshots off as real.** That can break Discord's rules and the law, and it hurts real people. Client mods are also against Discord's Terms of Service, so use this at your own risk.
+
+## Contributing
+
+Bug reports, ideas and PRs are welcome. If it made you laugh, a ⭐ helps other people find it.
 
 ## License
 
